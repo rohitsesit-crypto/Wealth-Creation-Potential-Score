@@ -412,10 +412,23 @@ export const COI_QUESTION = {
   hint: "Your selection sets your Country Opportunity Index (COI).",
 };
 
-/** Every choice-based question, keyed by id (Q21–Q27 plus Q1–Q20). */
+/**
+ * Q22 is rendered through the flagged country dropdown instead of the generic
+ * option list, but it is registered as a regular choice question so the server
+ * can validate all 27 answers through the same code path.
+ */
+export const COI_COUNTRY_QUESTION: ChoiceQuestion = {
+  id: COI_QUESTION.id,
+  label: COI_QUESTION.label,
+  text: COI_QUESTION.text,
+  options: COI_COUNTRIES.map((country) => ({ text: country.name, points: country.score })),
+};
+
+/** Every choice-based question, keyed by id (Q1–Q27). */
 export const ALL_QUESTIONS: Record<string, ChoiceQuestion> = [
   ...BEHAVIOUR_QUESTIONS,
   AGE_QUESTION,
+  COI_COUNTRY_QUESTION,
   CAREER_PATH_QUESTION,
   FINANCIAL_BASE_QUESTION,
   WEALTH_ROUTE_QUESTION,
