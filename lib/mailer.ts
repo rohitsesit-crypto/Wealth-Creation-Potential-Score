@@ -6,32 +6,136 @@
  *   SMTP_PORT=587
  *   SMTP_USER=heal@drvrushali.com
  *   SMTP_PASS=...
+ *
+ * Mail providers expose the same mailboxes through several hostnames and each
+ * hostname resolves to several IP addresses. Old addresses get decommissioned
+ * and front hosts (e.g. GoDaddy's email.secureserver.net) can stop answering,
+ * which makes the send hang until the OS gives up (ETIMEDOUT / ESOCKET).
+ *
+ * To keep delivery reliable we resolve the configured host plus its known
+ * sibling hosts, probe every address on both 465 and 587 in parallel, and
+ * connect to the first one that answers — retrying once on a dropped link.
  */
+
+import dns from "node:dns/promises";
+import net from "node:net";
 
 import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
 
-let cached: Transporter | null = null;
+const CONNECT_TIMEOUT_MS = 8_000;
+
+type Endpoint = { host: string; port: number; hostname: string };
+
+let cached: { transporter: Transporter; endpoint: Endpoint } | null = null;
+
+/** Read an env var as a trimmed string (guards against stray spaces/newlines). */
+const env = (key: string): string => (process.env[key] ?? "").trim();
 
 export function mailerConfigured(): boolean {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  return Boolean(env("SMTP_HOST") && env("SMTP_USER") && env("SMTP_PASS"));
 }
 
-export function getTransporter(): Transporter {
-  if (cached) return cached;
+/** Drop the cached connection so the next send re-resolves and re-probes. */
+export function resetMailer(): void {
+  cached = null;
+}
 
-  const port = Number(process.env.SMTP_PORT || 587);
-  cached = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port,
-    secure: port === 465,
-    auth: {
-      user: process.env.SMTP_USER as string,
-      pass: process.env.SMTP_PASS as string,
-    },
-    tls: { minVersion: "TLSv1.2" },
+/**
+ * Hostnames serving the same mailboxes. The configured host always comes first;
+ * the siblings are only used when the configured host does not answer.
+ */
+function hostVariants(smtpHost: string): string[] {
+  const variants = [smtpHost];
+  const host = smtpHost.toLowerCase();
+
+  if (host === "email.secureserver.net" || host.endsWith(".secureserver.net")) {
+    variants.push("smtpout.secureserver.net", "smtp.secureserver.net");
+  }
+  if (host.endsWith(".titan.email")) {
+    variants.push("smtpout.secureserver.net");
+  }
+
+  return [...new Set(variants)];
+}
+
+function probe(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port });
+    const finish = (reachable: boolean) => {
+      socket.destroy();
+      resolve(reachable);
+    };
+    socket.setTimeout(CONNECT_TIMEOUT_MS);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
   });
-  return cached;
+}
+
+/** Candidate endpoints, in order of preference, for the configured server. */
+async function endpoints(smtpHost: string, configuredPort: number): Promise<Endpoint[]> {
+  const ports = configuredPort === 465 ? [465, 587] : [configuredPort, 465];
+  const list: Endpoint[] = [];
+
+  for (const hostname of hostVariants(smtpHost)) {
+    let addresses: string[] = [hostname];
+    try {
+      const records = await dns.lookup(hostname, { all: true });
+      if (records.length > 0) addresses = records.map((record) => record.address);
+    } catch {
+      // Fall back to letting the OS resolve the hostname at connect time.
+    }
+    for (const address of addresses) {
+      for (const port of ports) list.push({ host: address, port, hostname });
+    }
+  }
+
+  return list;
+}
+
+/** Build (once) a transporter bound to a mail server address that answers. */
+export async function getTransporter(): Promise<Transporter> {
+  if (cached) return cached.transporter;
+
+  const smtpHost = env("SMTP_HOST");
+  const configuredPort = Number(env("SMTP_PORT") || 587);
+  const options = await endpoints(smtpHost, configuredPort);
+
+  let chosen: Endpoint | undefined;
+  try {
+    chosen = await Promise.any(
+      options.map((option) =>
+        probe(option.host, option.port).then((reachable) =>
+          reachable ? option : Promise.reject(new Error(`unreachable ${option.host}:${option.port}`)),
+        ),
+      ),
+    );
+  } catch {
+    // Nothing answered; still attempt the configured endpoint so the real
+    // connection error (rather than a probe result) reaches the caller.
+    chosen = { host: smtpHost, port: configuredPort, hostname: smtpHost };
+    console.warn(`[mailer] no SMTP address answered a probe; falling back to ${smtpHost}:${configuredPort}.`);
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: chosen.host,
+    port: chosen.port,
+    secure: chosen.port === 465,
+    auth: {
+      user: env("SMTP_USER"),
+      pass: env("SMTP_PASS"),
+    },
+    // Connecting by IP keeps SNI/certificate validation on the real hostname.
+    tls: { minVersion: "TLSv1.2", servername: chosen.hostname },
+    connectionTimeout: CONNECT_TIMEOUT_MS,
+    greetingTimeout: CONNECT_TIMEOUT_MS,
+    socketTimeout: 30_000,
+  });
+
+  console.log(`[mailer] delivering via ${chosen.hostname} (${chosen.host}:${chosen.port})`);
+  cached = { transporter, endpoint: chosen };
+  return transporter;
 }
 
 export type ReportMail = {
@@ -105,15 +209,19 @@ function buildHtml(mail: ReportMail): string {
 </html>`;
 }
 
-export async function sendReportEmail(mail: ReportMail): Promise<void> {
-  const transporter = getTransporter();
-  const fromName = process.env.MAIL_FROM_NAME || "Happiness Holistic Clinic";
-  const from = `${fromName} <${process.env.SMTP_USER}>`;
+function isConnectionError(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  return code === "ESOCKET" || code === "ETIMEDOUT" || code === "ECONNECTION" || code === "ECONNRESET";
+}
 
-  await transporter.sendMail({
+export async function sendReportEmail(mail: ReportMail): Promise<void> {
+  const fromName = env("MAIL_FROM_NAME") || "Happiness Holistic Clinic";
+  const from = `${fromName} <${env("SMTP_USER")}>`;
+
+  const message = {
     from,
     to: mail.to,
-    replyTo: process.env.MAIL_REPLY_TO || process.env.SMTP_USER,
+    replyTo: env("MAIL_REPLY_TO") || env("SMTP_USER"),
     subject: `Your Wealth Creation Potential Score report — ${mail.wcpsDisplay}`,
     html: buildHtml(mail),
     text:
@@ -126,8 +234,27 @@ export async function sendReportEmail(mail: ReportMail): Promise<void> {
       {
         filename: mail.attachment.filename,
         content: mail.attachment.content,
-        contentType: mail.attachmentIsPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        contentType: mail.attachmentIsPdf
+          ? "application/pdf"
+          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       },
     ],
-  });
+  };
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const transporter = await getTransporter();
+      await transporter.sendMail(message);
+      return;
+    } catch (error) {
+      // A stale address or a dropped link must not poison the cached
+      // transporter: clear it so the next attempt re-resolves and re-probes.
+      if (isConnectionError(error) && attempt === 1) {
+        console.warn("[mailer] connection failed, re-resolving the mail server and retrying once.");
+        resetMailer();
+        continue;
+      }
+      throw error;
+    }
+  }
 }
