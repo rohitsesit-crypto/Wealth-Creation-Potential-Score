@@ -257,7 +257,7 @@ function QuizFlow() {
                 <label className={styles.label} htmlFor="name">
                   Full name <span className={styles.req}>*</span>
                 </label>
-                <p className={styles.hint}>This name is printed on your report.</p>
+                
                 <input
                   id="name"
                   className={styles.input}
@@ -273,7 +273,6 @@ function QuizFlow() {
                 <label className={styles.label} htmlFor="email">
                   Email address <span className={styles.req}>*</span>
                 </label>
-                <p className={styles.hint}>Your report is delivered to this inbox.</p>
                 <input
                   id="email"
                   className={styles.input}
@@ -289,7 +288,6 @@ function QuizFlow() {
                 <label className={styles.label} htmlFor="residence">
                   Country of residence <span className={styles.req}>*</span>
                 </label>
-                <p className={styles.hint}>Used to match your Country Opportunity Index.</p>
                 <CountrySelect
                   inputId="residence"
                   value={form.country}
