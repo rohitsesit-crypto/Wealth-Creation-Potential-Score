@@ -325,7 +325,7 @@ function QuizFlow() {
           <div>
             <h1 className={styles.brandTitle}>WEALTH CREATION POTENTIAL SCORE</h1>
             <p className={styles.brandSub}>
-              Question {page} of {TOTAL_PAGES}
+              Page {page} of {TOTAL_PAGES}
             </p>
           </div>
           <span className={styles.counter}>
