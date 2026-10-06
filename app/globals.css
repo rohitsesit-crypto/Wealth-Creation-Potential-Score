@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Deep green + gold palette: calm, premium and clearly different from the
+   previous blue. Light-only design — no dark-mode flip.
+--------------------------------------------------------------------------- */
+:root {
+  --brand: #14523c;
+  --brand-deep: #0e3b2b;
+  --brand-accent: #9c7527;
+  --brand-gold: #c9a227;
+  --brand-mint: #2f7d5b;
+  --brand-soft: #e9f3ee;
+  --brand-tint: #cfe4d9;
+  --ink: #1e2a24;
+  --muted: #5f7268;
+  --line: #dfe9e3;
+  --surface: #ffffff;
+  --canvas: #f6faf8;
+}
+
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-gold: var(--brand-gold);
+  --color-brand-mint: var(--brand-mint);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-tint: var(--brand-tint);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-surface: var(--surface);
+  --color-canvas: var(--canvas);
+  --font-sans: var(--font-geist-sans);
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Soft ambient background used behind every screen. */
+.app-canvas {
+  background:
+    radial-gradient(1100px 520px at 10% -8%, #e7f4ec 0%, rgba(231, 244, 236, 0) 62%),
+    radial-gradient(900px 480px at 96% 2%, #f7f0dd 0%, rgba(247, 240, 221, 0) 58%),
+    linear-gradient(180deg, #f9fcfa 0%, #f3f9f5 100%);
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 45px -28px rgba(14, 59, 43, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 15px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.option:hover {
+  border-color: var(--brand-mint);
+  box-shadow: 0 10px 24px -18px rgba(20, 82, 60, 0.55);
+  transform: translateY(-1px);
+}
+
+.option-selected {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #ffffff;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise {
+  animation: rise 320ms ease both;
+}
