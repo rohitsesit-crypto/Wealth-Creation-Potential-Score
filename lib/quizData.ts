@@ -1,7 +1,7 @@
 /**
  * All 27 questions of the Wealth Creation Potential Score (WCPS) assessment.
  *
- *  - Q1–Q20  Behaviour questions (4 options each, points per option below).
+ *  - Q1–Q20  Behaviour questions (4 options each).
  *  - Q21     Age (dropdown).
  *  - Q22     Country where you expect to build your career / business (dropdown, COI).
  *  - Q23     Which career path are you most likely to pursue? (dropdown)
@@ -10,11 +10,34 @@
  *  - Q26     Target horizon for US$1 million (dropdown).
  *  - Q27     Current education / career stage (dropdown).
  *
+ * MARKING (corrected)
+ * The per-option marks below are the authoritative table supplied by the
+ * client. Every option is worth at least 1 mark, so the behaviour block spans
+ * 20–80 raw marks instead of the earlier 0-based table:
+ *
+ *   q1  [2,4,1,3]   q2  [3,2,1,4]   q3  [1,4,2,3]   q4  [1,4,2,3]
+ *   q5  [4,1,2,3]   q6  [3,1,2,4]   q7  [4,2,3,1]   q8  [1,4,2,3]
+ *   q9  [4,1,3,2]   q10 [2,4,3,4]   q11 [2,4,3,1]   q12 [1,3,4,2]
+ *   q13 [1,2,4,3]   q14 [1,2,3,4]   q15 [2,1,4,3]   q16 [1,2,3,4]
+ *   q17 [2,1,4,3]   q18 [1,3,4,2]   q19 [1,2,4,3]   q20 [4,2,3,1]
+ *
+ *   q21 [4,4,3,3,2,2,1]            q23 [4,3,3,4,4,3,3,2,2,2]
+ *   q24 [1,2,3,4,4]                q25 [2,3,4,3,4,1]
+ *   q26 [4,4,3,2,1]                q27 [3,4,4,4,3,4,2]
+ *
+ * (In that table the client's two comments are swapped: the 5-value row is the
+ * starting financial base — Q24 here — and the 10-value row is the career path,
+ * Q23. The values line up with the option order rendered on screen.)
+ *
+ * Q22 carries no marks of its own: selecting a country returns that country's
+ * Country Opportunity Index (COI, already a 0–100 score).
+ *
  * The scoring rules themselves live in lib/scoring.ts.
  */
 
 export type QuizOption = {
   text: string;
+  /** Marks awarded for this option. */
   points: number;
 };
 
@@ -34,8 +57,7 @@ const build = (tuples: OptionTuple[]): QuizOption[] =>
 
 /**
  * Q1–Q20 — behaviour questions, rendered in the order supplied by the client
- * (option A → D). Points are assigned per option so that the raw behaviour sum
- * keeps the agreed 21–80 range.
+ * (option A → D). Marks follow the corrected marking table above.
  */
 export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
   {
@@ -46,7 +68,7 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
       ["The simple one, to warm up", 2],
       ["The complex one, while energy is high", 4],
       ["Switch between both", 1],
-      ["Whichever feels interesting at that moment", 0],
+      ["Whichever feels interesting at that moment", 3],
     ]),
   },
   {
@@ -54,10 +76,10 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     label: "Q2/20",
     text: "Your study schedule was ruined for a week. How do you restart?",
     options: build([
-      ["Continue exactly where I stopped", 1],
-      ["Restart lightly but consistently", 4],
-      ["Restart fully, even if overwhelming", 0],
-      ["Understand the cause before restarting", 3],
+      ["Continue exactly where I stopped", 3],
+      ["Restart lightly but consistently", 2],
+      ["Restart fully, even if overwhelming", 1],
+      ["Understand the cause before restarting", 4],
     ]),
   },
   {
@@ -68,7 +90,7 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
       ["Explore the new idea", 1],
       ["Finish first", 4],
       ["Ask someone for advice", 2],
-      ["Work briefly on both", 0],
+      ["Work briefly on both", 3],
     ]),
   },
   {
@@ -77,9 +99,9 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     text: "Someone gives you neutral feedback when you expected praise. What do you think?",
     options: build([
       ["\u201cMaybe I misunderstood the expectation.\u201d", 1],
-      ["\u201cLet me try a different approach next time.\u201d", 3],
-      ["\u201cThey didn't notice my effort.\u201d", 0],
-      ["\u201cThis is normal; learning continues.\u201d", 4],
+      ["\u201cLet me try a different approach next time.\u201d", 4],
+      ["\u201cThey didn't notice my effort.\u201d", 2],
+      ["\u201cThis is normal; learning continues.\u201d", 3],
     ]),
   },
   {
@@ -89,8 +111,8 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     options: build([
       ["Teach anyway \u2014 it reinforces learning", 4],
       ["Help only if they insist", 1],
-      ["Avoid until more confident", 0],
-      ["Help only with what I'm sure of", 2],
+      ["Avoid until more confident", 2],
+      ["Help only with what I'm sure of", 3],
     ]),
   },
   {
@@ -98,9 +120,9 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     label: "Q6/20",
     text: "You've been practising something for weeks with no improvement. What sustains you?",
     options: build([
-      ["Habit", 2],
-      ["Fear of falling behind", 0],
-      ["Hope things will improve", 1],
+      ["Habit", 3],
+      ["Fear of falling behind", 1],
+      ["Hope things will improve", 2],
       ["Desire for mastery", 4],
     ]),
   },
@@ -109,10 +131,10 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     label: "Q7/20",
     text: "You get two free hours. What appeals more?",
     options: build([
-      ["Completing something pending", 3],
+      ["Completing something pending", 4],
       ["Starting something new", 2],
       ["Planning ahead", 3],
-      ["Improving something ongoing", 4],
+      ["Improving something ongoing", 1],
     ]),
   },
   {
@@ -122,7 +144,7 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     options: build([
       ["Let it go", 1],
       ["Understand the mistake", 4],
-      ["Feel bad for a long time", 0],
+      ["Feel bad for a long time", 2],
       ["Ask for feedback or re-evaluation", 3],
     ]),
   },
@@ -131,10 +153,10 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     label: "Q9/20",
     text: "Someone else does better than you. Your reaction?",
     options: build([
-      ["\u201cLet me observe them.\u201d", 2],
-      ["\u201cI'll find my own path.\u201d", 4],
-      ["\u201cI must try harder.\u201d", 1],
-      ["\u201cI'll go at my pace.\u201d", 3],
+      ["\u201cLet me observe them.\u201d", 4],
+      ["\u201cI'll find my own path.\u201d", 1],
+      ["\u201cI must try harder.\u201d", 3],
+      ["\u201cI'll go at my pace.\u201d", 2],
     ]),
   },
   {
@@ -143,8 +165,8 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     text: "What makes you believe you'll succeed in 5 years?",
     options: build([
       ["Curiosity", 2],
-      ["Consistency", 3],
-      ["Adaptability", 4],
+      ["Consistency", 4],
+      ["Adaptability", 3],
       ["Discipline", 4],
     ]),
   },
@@ -154,10 +176,10 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     title: "Meeting / Showing Up",
     text: "A client always makes you wait about 30 minutes. What do you do?",
     options: build([
-      ["Reach on time", 3],
+      ["Reach on time", 2],
       ["Reach 5 minutes early", 4],
-      ["Adjust and reach 30 minutes later", 1],
-      ["Reconfirm the timing", 2],
+      ["Adjust and reach 30 minutes later", 3],
+      ["Reconfirm the timing", 1],
     ]),
   },
   {
@@ -166,7 +188,7 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     title: "Screen Time & Scrolling",
     text: "You say you'll scroll for 5 minutes but end up spending 30. Next time?",
     options: build([
-      ["Accept it", 0],
+      ["Accept it", 1],
       ["Use a timer", 3],
       ["Keep the phone out of reach", 4],
       ["Reduce daytime screen time", 2],
@@ -178,7 +200,7 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     title: "Instant Gratification",
     text: "You crave your favourite snack but you're on a fitness goal.",
     options: build([
-      ["Eat it", 0],
+      ["Eat it", 1],
       ["Eat half", 2],
       ["Delay it for a milestone", 4],
       ["Replace it with something healthier", 3],
@@ -192,8 +214,8 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     options: build([
       ["I was lucky", 1],
       ["It was bound to happen", 2],
-      ["I created the right conditions", 4],
-      ["Let me use this opportunity well", 3],
+      ["I created the right conditions", 3],
+      ["Let me use this opportunity well", 4],
     ]),
   },
   {
@@ -202,10 +224,10 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     title: "Fitness & Binge Eating",
     text: "After a stressful day, you usually:",
     options: build([
-      ["Eat something comforting", 0],
+      ["Eat something comforting", 2],
       ["Distract myself with entertainment", 1],
-      ["Exercise lightly", 3],
-      ["Reflect and choose balanced food", 4],
+      ["Exercise lightly", 4],
+      ["Reflect and choose balanced food", 3],
     ]),
   },
   {
@@ -214,8 +236,8 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     title: "Gratitude",
     text: "End of day thought?",
     options: build([
-      ["Nothing special happened", 0],
-      ["Some things went fine", 1],
+      ["Nothing special happened", 1],
+      ["Some things went fine", 2],
       ["Thankful for at least one moment", 3],
       ["Many things to be grateful for", 4],
     ]),
@@ -226,10 +248,10 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     title: "Humility",
     text: "When someone praises you:",
     options: build([
-      ["\u201cI'm finally noticed.\u201d", 0],
+      ["\u201cI'm finally noticed.\u201d", 2],
       ["\u201cWish they knew the full story.\u201d", 1],
-      ["\u201cStill lots to learn.\u201d", 3],
-      ["\u201cThis is encouraging; I must improve.\u201d", 4],
+      ["\u201cStill lots to learn.\u201d", 4],
+      ["\u201cThis is encouraging; I must improve.\u201d", 3],
     ]),
   },
   {
@@ -238,10 +260,10 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     title: "Daily Habit Discipline",
     text: "On day 7 of a habit, you feel lazy.",
     options: build([
-      ["Skip it", 0],
-      ["Do the minimum possible", 2],
+      ["Skip it", 1],
+      ["Do the minimum possible", 3],
       ["Push through", 4],
-      ["Simplify the habit", 3],
+      ["Simplify the habit", 2],
     ]),
   },
   {
@@ -250,8 +272,8 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
     title: "Delayed Rewards",
     text: "A long project shows no results until day 20.",
     options: build([
-      ["\u201cThis isn't working.\u201d", 0],
-      ["Slow down", 1],
+      ["\u201cThis isn't working.\u201d", 1],
+      ["Slow down", 2],
       ["Progress will come", 4],
       ["Track differently", 3],
     ]),
@@ -265,7 +287,7 @@ export const BEHAVIOUR_QUESTIONS: ChoiceQuestion[] = [
       ["Help fully", 4],
       ["Give a hint", 2],
       ["Help after you finish", 3],
-      ["Don't help", 0],
+      ["Don't help", 1],
     ]),
   },
 ];
@@ -461,8 +483,13 @@ export const QUESTION_ORDER = [
 ];
 
 /**
- * Quiz pages. Q1–Q20 are shown two per page and Q21–Q27 get a page each
- * because they are longer list selections.
+ * Quiz pages.
+ *
+ *  - Pages 1–10: the 20 behaviour questions, two per page.
+ *  - Page 11   : Q21–Q27 together on a SINGLE page (age, career country,
+ *                career path, financial base, wealth route, target horizon and
+ *                education stage). This is the client's requested layout, so all
+ *                seven "about you" questions are answered in one pass.
  */
 export const QUIZ_PAGES: { ids: string[] }[] = [
   { ids: ["q1", "q2"] },
@@ -475,16 +502,71 @@ export const QUIZ_PAGES: { ids: string[] }[] = [
   { ids: ["q15", "q16"] },
   { ids: ["q17", "q18"] },
   { ids: ["q19", "q20"] },
-  { ids: ["q21"] },
-  { ids: ["q22"] },
-  { ids: ["q23"] },
-  { ids: ["q24"] },
-  { ids: ["q25"] },
-  { ids: ["q26"] },
-  { ids: ["q27"] },
+  { ids: ["q21", "q22", "q23", "q24", "q25", "q26", "q27"] },
 ];
 
 export const TOTAL_PAGES = QUIZ_PAGES.length;
+
+/**
+ * The first page that still has an unanswered question.
+ *
+ * Used instead of a saved page number: a returning participant is dropped
+ * straight onto the first question they have not answered yet, with no
+ * "restoring" message in between.
+ */
+export function firstUnansweredPage(answers: Record<string, number>): number {
+  for (let index = 0; index < QUIZ_PAGES.length; index += 1) {
+    const ids = QUIZ_PAGES[index].ids;
+    if (ids.some((id) => answers[id] === undefined)) return index + 1;
+  }
+  return TOTAL_PAGES;
+}
+
+/** The answer text chosen for one question, or "" when unanswered. */
+export function answerText(id: string, answers: Record<string, number>): string {
+  const question = ALL_QUESTIONS[id];
+  const index = answers[id];
+  if (!question || index === undefined) return "";
+  return question.options[index]?.text ?? "";
+}
+
+/**
+ * The 27 answers as plain text, keyed by sheet column ("Q1" … "Q27").
+ *
+ * This is what gets stored and logged — the participant's actual answer, not
+ * the marks awarded for it.
+ */
+export function answerTexts(answers: Record<string, number>): Record<string, string> {
+  const row: Record<string, string> = {};
+  QUESTION_ORDER.forEach((id, index) => {
+    row[`Q${index + 1}`] = answerText(id, answers);
+  });
+  return row;
+}
+
+/** The option index matching an answer text, or undefined when it does not match. */
+export function answerIndex(id: string, text: string): number | undefined {
+  const question = ALL_QUESTIONS[id];
+  const needle = String(text ?? "").trim().toLowerCase();
+  if (!question || !needle) return undefined;
+  const index = question.options.findIndex((option) => option.text.trim().toLowerCase() === needle);
+  return index >= 0 ? index : undefined;
+}
+
+/**
+ * Rebuilds the answer indexes from a stored text row ("Q1" … "Q27").
+ *
+ * Used when an unfinished attempt comes back from the spreadsheet, where the
+ * participant's answers are kept as text rather than marks.
+ */
+export function answersFromTexts(texts: Record<string, string>): Record<string, number> {
+  const answers: Record<string, number> = {};
+  QUESTION_ORDER.forEach((id, index) => {
+    const resolved = answerIndex(id, texts[`Q${index + 1}`] ?? "");
+    if (resolved !== undefined) answers[id] = resolved;
+  });
+  return answers;
+}
 
 /** ISO alpha-2 codes for the 35 COI countries, used only to render flags. */
 const COI_COUNTRY_CODES: Record<string, string> = {
