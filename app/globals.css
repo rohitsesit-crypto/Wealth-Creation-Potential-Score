@@ -50,11 +50,16 @@ body {
     linear-gradient(180deg, #f9fcfa 0%, #f3f9f5 100%);
 }
 
+/*
+ * NOTE: `backdrop-filter` must stay off `.card`.
+ * It forces the card to become a stacking context, which traps absolutely
+ * positioned children (such as the Q22 country dropdown panel) underneath the
+ * cards that follow it. An opaque surface looks the same and behaves correctly.
+ */
 .card {
-  background: rgba(255, 255, 255, 0.94);
+  background: #ffffff;
   border: 1px solid var(--line);
   box-shadow: 0 18px 45px -28px rgba(14, 59, 43, 0.35);
-  backdrop-filter: blur(6px);
 }
 
 .option {
@@ -96,6 +101,12 @@ body {
   }
 }
 
+/*
+ * `backwards` (not `both`) so the entrance animation does not leave a residual
+ * `transform` on the element. A lingering transform keeps a stacking context
+ * alive forever, which is what previously hid the Q22 dropdown panel behind the
+ * cards rendered after it.
+ */
 .rise {
-  animation: rise 320ms ease both;
+  animation: rise 320ms ease backwards;
 }
