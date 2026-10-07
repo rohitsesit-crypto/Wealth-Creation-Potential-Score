@@ -2,14 +2,17 @@
  * POST /api/submit-quiz
  *
  * Server-side pipeline for one completed assessment:
- *   1. Validate the payload (all 27 questions answered).
+ *   1. Validate the payload (all 27 questions answered, plus name/email/country).
  *   2. Compute WCPS + Perseverance / Self-Mastery / Growth scores.
  *   3. Pick the matching report template (1 of 27) from `public/`.
  *   4. Fill [NAME] and "[XX]/100 - [WCPS LABEL]" in the Word report.
  *   5. Convert it to PDF (when LibreOffice is available) and name it after the user.
  *   6. Email the finished report to the participant via SMTP (Nodemailer).
- *   7. Log the submission, its scores and the delivery status of that email to
- *      Google Sheets by calling the Apps Script Web App (`APPS_SCRIPT_URL`).
+ *   7. Log everything to Google Sheets through the Apps Script Web App:
+ *      name, email, country, the ANSWER TEXT the participant chose for each of
+ *      the 27 questions, the computed scores, the email delivery outcome, the
+ *      archived report link, and the completed status of the attempt identified
+ *      by `progressId` (so the in-progress row is updated, not duplicated).
  */
 
 import { readFile } from "node:fs/promises";
@@ -19,7 +22,7 @@ import { NextResponse } from "next/server";
 import { fillDocxTemplate, safeFileStem } from "@/lib/docx";
 import { mailerConfigured, sendReportEmail } from "@/lib/mailer";
 import { convertDocxToPdf } from "@/lib/pdf";
-import { ALL_QUESTIONS, BEHAVIOUR_QUESTION_IDS, TOTAL_PAGES } from "@/lib/quizData";
+import { ALL_QUESTIONS, BEHAVIOUR_QUESTION_IDS, QUESTION_ORDER, TOTAL_PAGES, answerTexts } from "@/lib/quizData";
 import { computeScore, wcpsDisplay, type Answers } from "@/lib/scoring";
 import {
   sheetsConfigured,
@@ -34,29 +37,16 @@ export const dynamic = "force-dynamic";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PDF_MIME = "application/pdf";
 
-const REQUIRED_IDS = [
-  ...BEHAVIOUR_QUESTION_IDS,
-  "q21",
-  "q22",
-  "q23",
-  "q24",
-  "q25",
-  "q26",
-  "q27",
-];
+const REQUIRED_IDS = [...BEHAVIOUR_QUESTION_IDS, "q21", "q22", "q23", "q24", "q25", "q26", "q27"];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 type Payload = {
+  progressId?: string;
   name?: string;
   email?: string;
-  mobile?: string;
-  dob?: string;
-  gender?: string;
   country?: string;
-  occupation?: string;
   answers?: Answers;
-  volunteer?: string;
 };
 
 function badRequest(error: string) {
@@ -97,8 +87,13 @@ export async function POST(request: Request) {
   const email = (body.email as string).trim();
   const country = (body.country as string).trim();
   const answers = body.answers as Answers;
+  const progressId = (body.progressId ?? "").trim();
+  /** What the participant answered, as text — this is what the sheet logs. */
+  const chosenAnswers = answerTexts(answers);
 
-  const result = computeScore(answers, country);
+  // The COI comes from Q22 inside the answers; `country` (residence) is only
+  // stored as contact detail and never influences the score.
+  const result = computeScore(answers);
   const display = wcpsDisplay(result);
   const fileStem = `${safeFileStem(name)}_WCPS_Report`;
   const templateName = `Report_${String(result.reportNumber).padStart(2, "0")}.docx`;
@@ -129,16 +124,9 @@ export async function POST(request: Request) {
   };
 
   const sheetRecord = {
-    form: {
-      name,
-      email,
-      country,
-      mobile: body.mobile ?? "",
-      dob: body.dob ?? "",
-      gender: body.gender ?? "",
-      occupation: body.occupation ?? "",
-      volunteer: body.volunteer ?? "",
-    },
+    progressId,
+    form: { name, email, country },
+    answerTexts: chosenAnswers,
     answers,
     scores: {
       wcps: result.wcps,
@@ -224,7 +212,6 @@ export async function POST(request: Request) {
       dimensions: summary.dimensions,
       attachment,
       attachmentIsPdf: Boolean(pdf),
-      volunteer: body.volunteer || undefined,
     });
   } catch (error) {
     console.error("[submit-quiz] Failed to send report email:", error);
@@ -256,6 +243,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     sentTo: email,
+    questions: QUESTION_ORDER.length,
     pages: TOTAL_PAGES,
     deliveredAs,
     summary,
