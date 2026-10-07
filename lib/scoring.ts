@@ -1,17 +1,22 @@
 /**
  * WCPS scoring engine.
  *
- * Implements the client-specified formulas exactly:
- *   B = ((Raw Q1–20 Score) − 21) / 59 × 100
- *   Direct questions (Q21, Q23, Q24, Q25, Q26, Q27) = (score − 1) / 3 × 100
+ * Implements the client-specified formulas exactly, using the corrected
+ * marking table in lib/quizData.ts (every option is worth 1–4 marks, so the
+ * behaviour block spans 20–80 raw marks):
+ *
+ *   B = ((Raw Q1–20 Score) − 20) / 60 × 100
+ *   Direct questions (Q21, Q23, Q24, Q25, Q26, Q27) = (marks − 1) / 3 × 100
  *   (weights follow the question: Q23 career path 10%, Q24 financial base 15%)
- *   Q22 = COI used directly (already 0–100)
+ *   Q22 = COI used directly (already 0–100) — the ONLY source of the COI.
+ *         The country of residence is collected for contact purposes and never
+ *         contributes to any score.
  *
  *   WCPS = 0.40B + 0.20C + 0.15F + 0.10R + 0.05W + 0.025A + 0.025T + 0.05E
  *
- *   P = (Raw P − 8) / 24 × 100   (Q1,Q2,Q3,Q6,Q7,Q11,Q18,Q19)
- *   S = (Raw S − 5) / 11 × 100   (Q10,Q12,Q13,Q15)
- *   G = (Raw G − 8) / 24 × 100   (Q4,Q5,Q8,Q9,Q14,Q16,Q17,Q20)
+ *   P = (Raw P − 8)  / 24 × 100   (Q1,Q2,Q3,Q6,Q7,Q11,Q18,Q19 — 8 Qs, 1–4 each)
+ *   S = (Raw S − 4)  / 12 × 100   (Q10,Q12,Q13,Q15 — 4 Qs, 1–4 each)
+ *   G = (Raw G − 8)  / 24 × 100   (Q4,Q5,Q8,Q9,Q14,Q16,Q17,Q20 — 8 Qs, 1–4 each)
  *
  * All results are clamped to 0–100 so an unusual answer set can never push a
  * score outside the documented range.
@@ -21,6 +26,7 @@ import {
   ALL_QUESTIONS,
   BEHAVIOUR_QUESTION_IDS,
   COI_COUNTRIES,
+  COI_QUESTION,
   GROWTH_IDS,
   PERSEVERANCE_IDS,
   SELF_MASTERY_IDS,
@@ -57,18 +63,36 @@ export type ScoreResult = {
   coiMatched: boolean;
 };
 
+/** Raw-mark range of the Q1–Q20 behaviour block (every option is worth 1–4). */
+const BEHAVIOUR_MIN = 20;
+const BEHAVIOUR_SPAN = 60;
+
+/** Raw-mark range of each dimension block, derived from its question count. */
+const dimensionRange = (ids: string[]) => {
+  const min = ids.length;
+  return { min, span: ids.length * 3 };
+};
+
+const PERSEVERANCE_RANGE = dimensionRange(PERSEVERANCE_IDS);
+const SELF_MASTERY_RANGE = dimensionRange(SELF_MASTERY_IDS);
+const GROWTH_RANGE = dimensionRange(GROWTH_IDS);
+
 /** Neutral fallback used when a participant's country has no published COI value. */
 export const DEFAULT_COI = 50;
 
 export const clampPercent = (value: number) => Math.min(100, Math.max(0, value));
 export const round1 = (value: number) => Math.round(value * 10) / 10;
 
-export function getCoi(rawCountry: string): { score: number; matched: boolean } {
+/**
+ * Resolves a COI value from the country NAME chosen in Q22. Only the Q22 answer
+ * may be passed here — the country of residence is never scored.
+ */
+export function coiForCountryName(rawCountry: string): { score: number; matched: boolean } {
   if (!rawCountry) return { score: DEFAULT_COI, matched: false };
   const needle = rawCountry.trim().toLowerCase();
   const hit = COI_COUNTRIES.find((c) => c.name.toLowerCase() === needle);
   if (hit) return { score: hit.score, matched: true };
-  // Common aliases so the COI still resolves for typical residence answers.
+  // Common aliases so the COI still resolves for typical Q22 answers.
   const aliases: Record<string, string> = {
     usa: "United States",
     "united states of america": "United States",
@@ -88,23 +112,37 @@ export function getCoi(rawCountry: string): { score: number; matched: boolean } 
   return { score: DEFAULT_COI, matched: false };
 }
 
-function rawSum(ids: string[], answers: Answers): number {
-  return ids.reduce((total, id) => {
-    const question = ALL_QUESTIONS[id];
-    const index = answers[id];
-    if (!question || index === undefined) return total;
-    const option = question.options[index];
-    return total + (option ? option.points : 0);
-  }, 0);
+/**
+ * The COI is taken from Q22 ONLY — the country where the participant expects to
+ * build their career or business. The country of residence has no effect on it.
+ */
+export function coiFromAnswers(answers: Answers): { score: number; matched: boolean } {
+  const index = answers[COI_QUESTION.id];
+  const name = index === undefined ? "" : ALL_QUESTIONS[COI_QUESTION.id]?.options[index]?.text ?? "";
+  return coiForCountryName(name);
 }
 
-function directNormalized(id: string, answers: Answers): number {
+/** Marks chosen for one question (0 when it is not answered). */
+export function marksFor(id: string, answers: Answers): number {
   const question = ALL_QUESTIONS[id];
   const index = answers[id];
   if (!question || index === undefined) return 0;
-  const option = question.options[index];
-  if (!option) return 0;
-  return clampPercent(((option.points - 1) / 3) * 100);
+  return question.options[index]?.points ?? 0;
+}
+
+function rawSum(ids: string[], answers: Answers): number {
+  return ids.reduce((total, id) => total + marksFor(id, answers), 0);
+}
+
+/** Normalises a raw block sum onto 0–100 using its achievable range. */
+function normalize(raw: number, min: number, span: number): number {
+  return clampPercent(((raw - min) / span) * 100);
+}
+
+function directNormalized(id: string, answers: Answers): number {
+  const marks = marksFor(id, answers);
+  if (!marks) return 0;
+  return clampPercent(((marks - 1) / 3) * 100);
 }
 
 export function classify(score: number): DimensionLevel {
@@ -169,15 +207,27 @@ export function wcpsBand(score: number) {
   return WCPS_BANDS.find((band) => rounded >= band.min && rounded <= band.max) ?? WCPS_BANDS[WCPS_BANDS.length - 1];
 }
 
-export function computeScore(answers: Answers, country: string): ScoreResult {
-  const rawBehaviour = rawSum(BEHAVIOUR_QUESTION_IDS, answers);
-  const behaviour = clampPercent(((rawBehaviour - 21) / 59) * 100);
+export function computeScore(answers: Answers): ScoreResult {
+  const behaviour = normalize(
+    rawSum(BEHAVIOUR_QUESTION_IDS, answers),
+    BEHAVIOUR_MIN,
+    BEHAVIOUR_SPAN,
+  );
 
-  const { score: coi, matched } = getCoi(country);
+  // Q22 decides the COI; the country of residence is never used for scoring.
+  const { score: coi, matched } = coiFromAnswers(answers);
 
-  const pScore = clampPercent(((rawSum(PERSEVERANCE_IDS, answers) - 8) / 24) * 100);
-  const sScore = clampPercent(((rawSum(SELF_MASTERY_IDS, answers) - 5) / 11) * 100);
-  const gScore = clampPercent(((rawSum(GROWTH_IDS, answers) - 8) / 24) * 100);
+  const pScore = normalize(
+    rawSum(PERSEVERANCE_IDS, answers),
+    PERSEVERANCE_RANGE.min,
+    PERSEVERANCE_RANGE.span,
+  );
+  const sScore = normalize(
+    rawSum(SELF_MASTERY_IDS, answers),
+    SELF_MASTERY_RANGE.min,
+    SELF_MASTERY_RANGE.span,
+  );
+  const gScore = normalize(rawSum(GROWTH_IDS, answers), GROWTH_RANGE.min, GROWTH_RANGE.span);
 
   // Q23 is the career path and Q24 the starting financial base (as reordered by
   // the client), so the 15% / 10% weights follow the question, not the position.
