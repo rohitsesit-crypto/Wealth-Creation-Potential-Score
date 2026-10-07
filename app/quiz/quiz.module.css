@@ -79,6 +79,18 @@
 .qCard {
   border-radius: 20px;
   padding: 24px;
+  /* Positioned + liftable so the Q22 country dropdown can float above the
+     cards that come after it on the combined Q21–Q27 page. */
+  position: relative;
+}
+
+/*
+ * While a dropdown inside this card holds focus, raise the whole card above its
+ * siblings. Without this the panel — even with its own high z-index — would be
+ * painted under the next cards, because each card is an independent grid item.
+ */
+.qCard:focus-within {
+  z-index: 30;
 }
 
 .qLabel {
@@ -578,4 +590,26 @@
   .chipRow {
     grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   }
+}
+
+/* --------------------------- Section intro card --------------------------- */
+.pageIntro {
+  border-radius: 20px;
+  padding: 22px 24px;
+  margin-bottom: 18px;
+  background: linear-gradient(160deg, #f2f9fd 0%, #eaf6f1 100%);
+  border: 1px solid var(--brand-tint);
+}
+
+/* ---------------------------- Resume notice ------------------------------- */
+.resumeNote {
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-tint);
+  color: var(--brand-deep);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
 }
