@@ -7,6 +7,10 @@ import styles from "./home.module.css";
 export default function HomePage() {
   return (
     <div className={`app-canvas ${styles.page}`}>
+      <div className={styles.masthead}>
+        <img src="/logo.png" alt={INTRODUCTION_TITLE} className={styles.logo} />
+      </div>
+
       <div className={styles.wrap}>
         <section className={`card ${styles.hero}`}>
           <h1 className={styles.title}>{INTRODUCTION_TITLE}</h1>
@@ -30,4 +34,3 @@ export default function HomePage() {
     </div>
   );
 }
-
