@@ -2,6 +2,14 @@
   position: relative;
 }
 
+/*
+ * While the panel is open, the wrapper is lifted inside the card so the panel
+ * sits above the option rows / neighbouring content of the same card.
+ */
+.wrapOpen {
+  z-index: 20;
+}
+
 .trigger {
   display: flex;
   width: 100%;
@@ -32,6 +40,10 @@
   align-items: center;
   gap: 10px;
   font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .placeholder {
@@ -54,9 +66,14 @@
   flex: none;
 }
 
+/*
+ * `z-index: 200` keeps the panel above every card on the page. It works now
+ * that `.card` no longer sets `backdrop-filter` and `.rise` no longer leaves a
+ * residual transform — those used to trap this panel behind later cards.
+ */
 .panel {
   position: absolute;
-  z-index: 30;
+  z-index: 200;
   top: calc(100% + 8px);
   left: 0;
   right: 0;
@@ -65,6 +82,12 @@
   border-radius: 14px;
   box-shadow: 0 22px 44px -26px rgba(31, 78, 121, 0.5);
   overflow: hidden;
+}
+
+/* Opens upward when the trigger is too low in the viewport for a 340px panel. */
+.panelUp {
+  top: auto;
+  bottom: calc(100% + 8px);
 }
 
 .search {
@@ -79,6 +102,7 @@
 .list {
   max-height: 260px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   margin: 0;
   padding: 6px;
   list-style: none;
@@ -100,6 +124,12 @@
 }
 
 .item:hover {
+  background: var(--brand-soft);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: -2px;
   background: var(--brand-soft);
 }
 
