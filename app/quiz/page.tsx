@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import CountrySelect from "@/components/CountrySelect";
@@ -11,7 +11,21 @@ import {
   COI_QUESTION,
   QUIZ_PAGES,
   TOTAL_PAGES,
+  firstUnansweredPage,
 } from "@/lib/quizData";
+import {
+  RESUME_PARAM,
+  SERVER_SYNC_DEBOUNCE_MS,
+  clearLocalState,
+  createProgressId,
+  fetchServerState,
+  pushServerState,
+  readLocalState,
+  withoutResumeParam,
+  withResumeParam,
+  writeLocalState,
+  type PersistedState,
+} from "@/lib/progress";
 import type { Answers } from "@/lib/scoring";
 
 import styles from "./quiz.module.css";
@@ -27,6 +41,14 @@ type Summary = {
 type Step = "quiz" | "form" | "done";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+/** The single page that carries Q21–Q27 is the last one. */
+const DETAILS_PAGE = TOTAL_PAGES;
+
+/**
+ * Runs before the first paint on the client (so the resumed attempt is already
+ * in place when the quiz appears) without warning during the server render.
+ */
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /** Simple label + native select, used for the Age and career-path dropdowns. */
 function Dropdown({
@@ -72,16 +94,14 @@ function Dropdown({
 function QuizFlow() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const volunteerRef = searchParams.get("ref") ?? "";
 
   const [step, setStep] = useState<Step>("quiz");
   const [page, setPage] = useState(1);
   const [answers, setAnswers] = useState<Answers>({});
   const [toast, setToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [booted, setBooted] = useState(false);
 
-  // Full country list for the residence dropdown. `getCountries()` is a cached,
-  // deterministic helper, so it is safe to resolve during render.
   const countries = useMemo<Country[]>(() => getCountries(), []);
 
   const [form, setForm] = useState({ name: "", email: "", country: "" });
@@ -89,7 +109,92 @@ function QuizFlow() {
   const [submitting, setSubmitting] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [sentTo, setSentTo] = useState("");
+  const [doneName, setDoneName] = useState("");
 
+  const progressIdRef = useRef<string>("");
+  const syncTimer = useRef<number | null>(null);
+  const lastPushedRef = useRef<string>("");
+  /** Set once the report is submitted, so nothing is written afterwards. */
+  const finishedRef = useRef(false);
+
+  /* ------------------- Silent resume (no visible loading step) ---------------- */
+  // Rebuilt from this browser's saved attempt BEFORE the first paint, so a
+  // returning participant lands straight on the first question they have not
+  // answered yet. A new participant simply starts at Q1 — no message either way.
+  useIsomorphicLayoutEffect(() => {
+    const urlId = searchParams.get(RESUME_PARAM) ?? "";
+    const local = readLocalState(urlId || undefined);
+    const progressId = urlId || local?.progressId || createProgressId();
+    progressIdRef.current = progressId;
+
+    if (local) {
+      const restoredAnswers = local.answers ?? {};
+      setAnswers(restoredAnswers);
+      setPage(firstUnansweredPage(restoredAnswers));
+      setForm({
+        name: local.form?.name ?? "",
+        email: local.form?.email ?? "",
+        country: local.form?.country ?? "",
+      });
+      setStep(local.step === "form" ? "form" : "quiz");
+    } else if (urlId) {
+      // Nothing stored locally: pull the attempt saved under this link's id
+      // (another device, cleared storage) and continue without interrupting.
+      void fetchServerState(progressId).then((remote) => {
+        if (!remote || remote.completed) return;
+        const remoteAnswers = remote.answers ?? {};
+        setAnswers(remoteAnswers);
+        setPage(firstUnansweredPage(remoteAnswers));
+        setForm({
+          name: remote.form?.name ?? "",
+          email: remote.form?.email ?? "",
+          country: remote.form?.country ?? "",
+        });
+        if (remote.step === "form") setStep("form");
+      });
+    }
+
+    setBooted(true);
+  }, []);
+
+  /* ------------------------------- Autosave --------------------------------- */
+  const persist = useCallback(
+    (immediate = false) => {
+      if (!progressIdRef.current || finishedRef.current) return;
+      const state: PersistedState = {
+        progressId: progressIdRef.current,
+        answers,
+        page,
+        step,
+        form,
+        savedAt: new Date().toISOString(),
+      };
+      writeLocalState(state);
+
+      const serialized = JSON.stringify({ answers, page, step, form });
+      if (!immediate && serialized === lastPushedRef.current) return;
+      lastPushedRef.current = serialized;
+
+      if (syncTimer.current) window.clearTimeout(syncTimer.current);
+      const push = () => void pushServerState(state);
+      if (immediate) push();
+      else syncTimer.current = window.setTimeout(push, SERVER_SYNC_DEBOUNCE_MS);
+    },
+    [answers, page, step, form],
+  );
+
+  useEffect(() => {
+    if (!booted) return;
+    persist();
+  }, [answers, page, step, form, booted, persist]);
+
+  // Keep the shareable link in sync so reopening the URL resumes correctly.
+  useEffect(() => {
+    if (!booted || !progressIdRef.current || finishedRef.current) return;
+    window.history.replaceState(null, "", withResumeParam(window.location.href, progressIdRef.current));
+  }, [booted, step]);
+
+  /* ------------------------------ Navigation -------------------------------- */
   const pageIds = useMemo(() => QUIZ_PAGES[page - 1]?.ids ?? [], [page]);
   const currentQuestions = useMemo(
     () => pageIds.map((id) => ALL_QUESTIONS[id]).filter(Boolean),
@@ -120,16 +225,18 @@ function QuizFlow() {
     if (missing.length > 0) {
       showToast(
         missing.length === 1
-          ? "Please answer the question on this page before continuing"
-          : `Please answer all ${missing.length} questions on this page before continuing`,
+          ? "Please answer the remaining question on this page before continuing"
+          : `Please answer all ${missing.length} remaining questions on this page before continuing`,
       );
       return;
     }
     if (page < TOTAL_PAGES) {
       setPage((prev) => prev + 1);
+      persist(true);
       scrollTop();
     } else {
       setStep("form");
+      persist(true);
       scrollTop();
     }
   };
@@ -145,20 +252,25 @@ function QuizFlow() {
       return;
     }
     setPage((prev) => prev - 1);
+    persist(true);
     scrollTop();
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (form.name.trim().length < 2) {
+    const name = form.name.trim();
+    const email = form.email.trim();
+    const country = form.country.trim();
+
+    if (name.length < 2) {
       setFormError("Please enter your full name.");
       return;
     }
-    if (!EMAIL_RE.test(form.email.trim())) {
+    if (!EMAIL_RE.test(email)) {
       setFormError("Please enter a valid email address.");
       return;
     }
-    if (!form.country.trim()) {
+    if (!country) {
       setFormError("Please select your country of residence.");
       return;
     }
@@ -169,13 +281,7 @@ function QuizFlow() {
       const response = await fetch("/api/submit-quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: form.name.trim(),
-          email: form.email.trim(),
-          country: form.country.trim(),
-          answers,
-          volunteer: volunteerRef,
-        }),
+        body: JSON.stringify({ progressId: progressIdRef.current, name, email, country, answers }),
       });
       const data = (await response.json()) as { ok: boolean; error?: string; summary?: Summary };
 
@@ -185,10 +291,22 @@ function QuizFlow() {
         return;
       }
 
+      // The attempt is finished: erase it and reset the flow so the participant
+      // starts again from the very first question next time.
+      finishedRef.current = true;
+      clearLocalState();
+      if (syncTimer.current) window.clearTimeout(syncTimer.current);
+      progressIdRef.current = createProgressId();
+      setAnswers({});
+      setPage(1);
+      setForm({ name: "", email: "", country: "" });
+
       setSummary(data.summary);
-      setSentTo(form.email.trim());
+      setSentTo(email);
+      setDoneName(name);
       setStep("done");
       setSubmitting(false);
+      window.history.replaceState(null, "", withoutResumeParam(window.location.href));
       scrollTop();
     } catch {
       setFormError("We could not reach the server. Please check your connection and try again.");
@@ -207,7 +325,7 @@ function QuizFlow() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h1 className={styles.doneTitle}>All done, {form.name.split(" ")[0]}!</h1>
+            <h1 className={styles.doneTitle}>All done, {doneName.split(" ")[0]}!</h1>
             <p className={styles.doneText}>
               Your report has been prepared and sent to <strong>{sentTo}</strong>. It usually arrives within a minute — please
               check your spam folder if you do not see it.
@@ -257,7 +375,7 @@ function QuizFlow() {
                 <label className={styles.label} htmlFor="name">
                   Full name <span className={styles.req}>*</span>
                 </label>
-                
+
                 <input
                   id="name"
                   className={styles.input}
@@ -314,6 +432,8 @@ function QuizFlow() {
   }
 
   /* ----------------------------- Quiz screen ----------------------------- */
+  const isDetailsPage = page === DETAILS_PAGE;
+
   return (
     <div className={`app-canvas ${styles.page}`}>
       <div className={`${styles.toast} ${toast ? styles.toastShow : ""}`} role="status" aria-live="polite">
@@ -325,7 +445,7 @@ function QuizFlow() {
           <div>
             <h1 className={styles.brandTitle}>WEALTH CREATION POTENTIAL SCORE</h1>
             <p className={styles.brandSub}>
-              Page {page} of {TOTAL_PAGES}
+              {isDetailsPage ? "Final section — all remaining questions on one page" : `Page ${page} of ${TOTAL_PAGES}`}
             </p>
           </div>
           <span className={styles.counter}>
@@ -338,66 +458,78 @@ function QuizFlow() {
       </header>
 
       <main className={styles.main}>
+        {isDetailsPage && (
+          <div className={`card ${styles.pageIntro}`}>
+            <p className={styles.qLabel}>SECTION 2 OF 2</p>
+            <h2 className={styles.qScenario}>About you and your goals</h2>
+            <p className={styles.qHint}>
+              The last seven questions cover your age, career plans, financial base and target horizon. Answer them all, then
+              continue to receive your personalised report.
+            </p>
+          </div>
+        )}
+
         <div className={styles.grid}>
-          {pageIds[0] === "q22" ? (
-            <section className={`card ${styles.qCard} rise`}>
-              <p className={styles.qLabel}>{COI_QUESTION.label}</p>
-              <h2 className={styles.qTitle}>{COI_QUESTION.text}</h2>
-              <p className={styles.qHint}>{COI_QUESTION.hint}</p>
-              <CountrySelect
-                inputId="q22-country"
-                value={answers.q22 === undefined ? "" : COI_COUNTRY_OPTIONS[answers.q22]?.name ?? ""}
-                onChange={(value) => {
-                  const index = COI_COUNTRY_OPTIONS.findIndex((country) => country.name === value);
-                  if (index >= 0) handleAnswer("q22", index);
-                }}
-                countries={COI_COUNTRY_OPTIONS}
-                placeholder="Select the country"
-              />
-            </section>
-          ) : (
-            currentQuestions.map((question) => {
-              const dropdown = question.id === "q21" || question.id === "q23";
+          {currentQuestions.map((question) => {
+            const dropdown = question.id === "q21" || question.id === "q23";
+            if (question.id === "q22") {
               return (
                 <section key={question.id} className={`card ${styles.qCard} rise`}>
-                  <p className={styles.qLabel}>{question.label}</p>
-                  {question.title && <h3 className={styles.qScenario}>{question.title}</h3>}
-                  {dropdown ? (
-                    <>
-                      <h2 className={styles.qTitle}>{question.text}</h2>
-                      <Dropdown
-                        questionId={`${question.id}-select`}
-                        label="Select an option"
-                        options={question.options}
-                        value={answers[question.id]}
-                        onChange={(value) => handleAnswer(question.id, value)}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <h2 className={styles.qTitle}>{question.text}</h2>
-                      <div className={styles.options}>
-                        {question.options.map((option, index) => {
-                          const selected = answers[question.id] === index;
-                          return (
-                            <button
-                              key={option.text}
-                              type="button"
-                              aria-pressed={selected}
-                              className={`option ${selected ? "option-selected" : ""}`}
-                              onClick={() => handleAnswer(question.id, index)}
-                            >
-                              <span className={styles.optionText}>{option.text}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
+                  <p className={styles.qLabel}>{COI_QUESTION.label}</p>
+                  <h2 className={styles.qTitle}>{COI_QUESTION.text}</h2>
+                  <p className={styles.qHint}>{COI_QUESTION.hint}</p>
+                  <CountrySelect
+                    inputId="q22-country"
+                    value={answers.q22 === undefined ? "" : COI_COUNTRY_OPTIONS[answers.q22]?.name ?? ""}
+                    onChange={(value) => {
+                      const index = COI_COUNTRY_OPTIONS.findIndex((country) => country.name === value);
+                      if (index >= 0) handleAnswer("q22", index);
+                    }}
+                    countries={COI_COUNTRY_OPTIONS}
+                    placeholder="Select the country"
+                  />
                 </section>
               );
-            })
-          )}
+            }
+            return (
+              <section key={question.id} className={`card ${styles.qCard} rise`}>
+                <p className={styles.qLabel}>{question.label}</p>
+                {question.title && <h3 className={styles.qScenario}>{question.title}</h3>}
+                {dropdown ? (
+                  <>
+                    <h2 className={styles.qTitle}>{question.text}</h2>
+                    <Dropdown
+                      questionId={`${question.id}-select`}
+                      label="Select an option"
+                      options={question.options}
+                      value={answers[question.id]}
+                      onChange={(value) => handleAnswer(question.id, value)}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <h2 className={styles.qTitle}>{question.text}</h2>
+                    <div className={styles.options}>
+                      {question.options.map((option, index) => {
+                        const selected = answers[question.id] === index;
+                        return (
+                          <button
+                            key={option.text}
+                            type="button"
+                            aria-pressed={selected}
+                            className={`option ${selected ? "option-selected" : ""}`}
+                            onClick={() => handleAnswer(question.id, index)}
+                          >
+                            <span className={styles.optionText}>{option.text}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </section>
+            );
+          })}
         </div>
       </main>
 
