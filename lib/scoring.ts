@@ -238,16 +238,17 @@ export function computeScore(answers: Answers): ScoreResult {
   const targetHorizon = directNormalized("q26", answers);
   const education = directNormalized("q27", answers);
 
-  const wcps = clampPercent(
-    0.4 * behaviour +
-      0.2 * coi +
-      0.15 * financial +
-      0.1 * career +
-      0.05 * wealthRoute +
-      0.025 * age +
-      0.025 * targetHorizon +
-      0.05 * education,
-  );
+const wcps = clampPercent((pScore + sScore + gScore) / 3);
+  //const wcps = clampPercent(
+    //0.4 * behaviour +
+   //   0.2 * coi +
+      //0.15 * financial +
+      //0.1 * career +
+      //0.05 * wealthRoute +
+     // 0.025 * age +
+     // 0.025 * targetHorizon +
+      //0.05 * education,
+  //);
 
   const band = wcpsBand(wcps);
 
